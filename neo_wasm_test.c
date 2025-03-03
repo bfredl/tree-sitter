@@ -63,7 +63,8 @@ int main(int argc, char **argv) {
   const TSLanguage *lang = ts_wasm_store_load_language(ts_wasmstore, argv[2], data,
                                                        (uint32_t)file_size, &werr);
   if (lang) {
-    fprintf(stderr, "OK");
+    fprintf(stderr, "OK %d", ts_language_abi_version(lang));
+
   } else {
     fprintf(stderr, "FAIL\n");
   }
