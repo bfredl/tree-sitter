@@ -261,6 +261,8 @@ static void ts_lexer__advance(TSLexer *_self, bool skip) {
     LOG("consume", self->data.lookahead)
   }
 
+  fprintf(stderr, "Advance %03d %d\n", self->data.lookahead, (int)skip);
+
   ts_lexer__do_advance(self, skip);
 }
 
