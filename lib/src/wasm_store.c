@@ -2,6 +2,7 @@
 #include "./parser.h"
 #include <stdint.h>
 
+#define TREE_SITTER_FEATURE_WASM
 #ifdef TREE_SITTER_FEATURE_WASM
 
 #include "./alloc.h"

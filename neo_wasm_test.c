@@ -40,7 +40,6 @@ static const char *wasmerr_to_str(TSWasmErrorKind werr)
 }
 
 int main(int argc, char **argv) {
-  TSParser *parser = ts_parser_new();
   TSWasmStore *ts_wasmstore;
 
   if (argc < 2) return 3;
@@ -63,10 +62,21 @@ int main(int argc, char **argv) {
   const TSLanguage *lang = ts_wasm_store_load_language(ts_wasmstore, argv[2], data,
                                                        (uint32_t)file_size, &werr);
   if (lang) {
-    fprintf(stderr, "OK %d", ts_language_abi_version(lang));
+    fprintf(stderr, "OK %d\n", ts_language_abi_version(lang));
 
   } else {
     fprintf(stderr, "FAIL\n");
+    return 5;
   }
 
+  TSParser *parser = ts_parser_new();
+  ts_parser_set_language(parser, lang);
+
+  fprintf(stderr, "is set! \n");
+
+  const char *source_code = "<html><body>halloj</body></html>";
+  TSTree *tree = ts_parser_parse_string( parser, NULL, source_code, strlen(source_code));
+
+  fprintf(stderr, "is tree: %p\n", tree);
+  return 0;
 }

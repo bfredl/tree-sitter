@@ -17,6 +17,10 @@ pub export fn ts_wasm_get_lang_mem(lang_ptr: *anyopaque, off: *u32) callconv(.c)
     return (lang.in.mem_get_bytes(0, lang.lang_in_mem) catch return null).ptr;
 }
 
+pub export fn ts_wasm_reset_heap(lang_ptr: *anyopaque) callconv(.c) void {
+    _ = lang_ptr;
+}
+
 fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     _ = args_ret;
     _ = data;

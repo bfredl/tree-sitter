@@ -54,8 +54,22 @@ typedef struct {
 } LanguageInWasmMemory;
 
 typedef struct WASMLanguage WASMLanguage;
+typedef struct {
+  // TODO: c side struct + zig side struct should be one alloc
+  WASMLanguage *wasm_lang;
+  TSLexer *current_lexer;
+} LanguageWasmModule;
+
+static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
+  return false;
+}
+
+// ZIG BINDING
 WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name);
 char *ts_wasm_get_lang_mem(WASMLanguage *lang, uint32_t *lang_off);
+char *ts_wasm_reset_heap(WASMLanguage *lang);
+
+// END ZIG
 
 TSWasmStore *ts_wasm_store_new(TSWasmEngine *engine, TSWasmError *wasm_error) {
   return NULL;
@@ -71,9 +85,15 @@ const TSLanguage *ts_wasm_store_load_language(
 ) {
   WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name);
 
-  TSLanguage *tslang = big_thing_copy(lang);
+  TSLanguage *language = big_thing_copy(lang);
+  LanguageWasmModule *language_module = ts_malloc(sizeof(LanguageWasmModule));
+  *language_module = (LanguageWasmModule) {
+    .wasm_lang = lang,
+  };
+  language->lex_fn = ts_wasm_store__sentinel_lex_fn;
+  language->keyword_lex_fn = (bool (*)(TSLexer *, TSStateId))language_module;
 
-  return tslang;
+  return language;
 }
 
 void ts_wasm_store_delete(TSWasmStore *self) {
@@ -85,10 +105,10 @@ bool ts_wasm_store_start(
   TSLexer *lexer,
   const TSLanguage *language
 ) {
-  (void)self;
-  (void)lexer;
-  (void)language;
-  return false;
+  LanguageWasmModule *language_module = (void *)language->keyword_lex_fn;
+  language_module->current_lexer = lexer;
+  ts_wasm_reset_heap(language_module->wasm_lang);
+  return true;
 }
 
 void ts_wasm_store_reset(TSWasmStore *self) {
@@ -160,8 +180,7 @@ bool ts_wasm_store_has_error(const TSWasmStore *self) {
 }
 
 bool ts_language_is_wasm(const TSLanguage *self) {
-  (void)self;
-  return false;
+  return self->lex_fn == ts_wasm_store__sentinel_lex_fn;
 }
 
 void ts_wasm_language_retain(const TSLanguage *self) {
