@@ -58,6 +58,14 @@ typedef struct {
   // TODO: c side struct + zig side struct should be one alloc
   WASMLanguage *wasm_lang;
   TSLexer *current_lexer;
+  int32_t external_states_address;
+  int32_t lex_main_fn_index;
+  int32_t lex_keyword_fn_index;
+  int32_t scanner_create_fn_index;
+  int32_t scanner_destroy_fn_index;
+  int32_t scanner_serialize_fn_index;
+  int32_t scanner_deserialize_fn_index;
+  int32_t scanner_scan_fn_index;
 } LanguageWasmModule;
 
 static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
@@ -68,6 +76,7 @@ static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
 WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name);
 char *ts_wasm_get_lang_mem(WASMLanguage *lang, uint32_t *lang_off);
 char *ts_wasm_reset_heap(WASMLanguage *lang);
+uint32_t ts_wasm_call_tbl_func(WASMLanguage *lang, uint32_t table_idx, int n_arg, uint32_t arg1, uint32_t arg2);
 
 // END ZIG
 
@@ -75,7 +84,7 @@ TSWasmStore *ts_wasm_store_new(TSWasmEngine *engine, TSWasmError *wasm_error) {
   return NULL;
 }
 
-static TSLanguage *big_thing_copy(WASMLanguage *lang);
+TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_module);
 const TSLanguage *ts_wasm_store_load_language(
   TSWasmStore *self,
   const char *language_name,
@@ -85,11 +94,8 @@ const TSLanguage *ts_wasm_store_load_language(
 ) {
   WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name);
 
-  TSLanguage *language = big_thing_copy(lang);
   LanguageWasmModule *language_module = ts_malloc(sizeof(LanguageWasmModule));
-  *language_module = (LanguageWasmModule) {
-    .wasm_lang = lang,
-  };
+  TSLanguage *language = big_thing_copy(lang, language_module);
   language->lex_fn = ts_wasm_store__sentinel_lex_fn;
   language->keyword_lex_fn = (bool (*)(TSLexer *, TSStateId))language_module;
 
@@ -100,6 +106,10 @@ void ts_wasm_store_delete(TSWasmStore *self) {
   (void)self;
 }
 
+static LanguageWasmModule *unself(TSWasmStore *self) {
+  return (LanguageWasmModule *)(((TSLanguage *)self)->keyword_lex_fn);
+}
+
 bool ts_wasm_store_start(
   TSWasmStore *self,
   TSLexer *lexer,
@@ -108,6 +118,7 @@ bool ts_wasm_store_start(
   LanguageWasmModule *language_module = (void *)language->keyword_lex_fn;
   language_module->current_lexer = lexer;
   ts_wasm_reset_heap(language_module->wasm_lang);
+  fprintf(stderr, "IS START\n");
   return true;
 }
 
@@ -116,20 +127,23 @@ void ts_wasm_store_reset(TSWasmStore *self) {
 }
 
 bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
+  fprintf(stderr, "lex_main\n");
   (void)self;
   (void)state;
   return false;
 }
 
 bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
+  fprintf(stderr, "lex_keyword\n");
   (void)self;
   (void)state;
   return false;
 }
 
 uint32_t ts_wasm_store_call_scanner_create(TSWasmStore *self) {
-  (void)self;
-  return 0;
+  LanguageWasmModule *mod = unself(self);
+  fprintf(stderr, "scanner_create\n");
+  return ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_create_fn_index, 0, 0, 0);
 }
 
 void ts_wasm_store_call_scanner_destroy(
@@ -145,6 +159,7 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t scanner_address,
   uint32_t valid_tokens_ix
 ) {
+  fprintf(stderr, "scanner_scann\n");
   (void)self;
   (void)scanner_address;
   (void)valid_tokens_ix;
@@ -156,6 +171,7 @@ uint32_t ts_wasm_store_call_scanner_serialize(
   uint32_t scanner_address,
   char *buffer
 ) {
+  fprintf(stderr, "scanner_serialize\n");
   (void)self;
   (void)scanner_address;
   (void)buffer;
@@ -168,6 +184,7 @@ void ts_wasm_store_call_scanner_deserialize(
   const char *buffer,
   unsigned length
 ) {
+  fprintf(stderr, "scanner_deserialize\n");
   (void)self;
   (void)scanner_address;
   (void)buffer;
@@ -180,6 +197,7 @@ bool ts_wasm_store_has_error(const TSWasmStore *self) {
 }
 
 bool ts_language_is_wasm(const TSLanguage *self) {
+  fprintf(stderr, "it is? %d\n", self->lex_fn == ts_wasm_store__sentinel_lex_fn);
   return self->lex_fn == ts_wasm_store__sentinel_lex_fn;
 }
 
@@ -261,7 +279,7 @@ static void *copy_string(
   return result;
 }
 
-TSLanguage *big_thing_copy(WASMLanguage *lang) {
+TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_module) {
   LanguageInWasmMemory wasm_language;
   uint32_t language_address;
   char *memory = ts_wasm_get_lang_mem(lang, &language_address);
@@ -472,5 +490,17 @@ TSLanguage *big_thing_copy(WASMLanguage *lang) {
     );
     language->external_scanner.states = (void *)(uintptr_t)wasm_language.external_scanner.states;
   }
+
+  *language_module = (LanguageWasmModule) {
+    .wasm_lang = lang,
+    .external_states_address = wasm_language.external_scanner.states,
+    .lex_main_fn_index = wasm_language.lex_fn,
+    .lex_keyword_fn_index = wasm_language.keyword_lex_fn,
+    .scanner_create_fn_index = wasm_language.external_scanner.create,
+    .scanner_destroy_fn_index = wasm_language.external_scanner.destroy,
+    .scanner_serialize_fn_index = wasm_language.external_scanner.serialize,
+    .scanner_deserialize_fn_index = wasm_language.external_scanner.deserialize,
+    .scanner_scan_fn_index = wasm_language.external_scanner.scan,
+  };
   return language;
 }

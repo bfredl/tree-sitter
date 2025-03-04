@@ -1,4 +1,4 @@
-.{ .name = "tree-sitter", .version = "0.25.1", .paths = .{
+.{ .name = .treesitter, .version = "0.25.1", .fingerprint = 0x8b4879bc81566351, .paths = .{
     "build.zig",
     "build.zig.zon",
     "lib/src",

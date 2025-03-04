@@ -70,6 +70,7 @@ int main(int argc, char **argv) {
   }
 
   TSParser *parser = ts_parser_new();
+  ts_parser_set_wasm_store(parser, (TSWasmStore *)lang);
   ts_parser_set_language(parser, lang);
 
   fprintf(stderr, "is set! \n");
