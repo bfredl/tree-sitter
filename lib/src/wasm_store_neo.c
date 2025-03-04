@@ -75,8 +75,9 @@ static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
 // ZIG BINDING
 WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name);
 char *ts_wasm_get_lang_mem(WASMLanguage *lang, uint32_t *lang_off);
-char *ts_wasm_reset_heap(WASMLanguage *lang);
-uint32_t ts_wasm_call_tbl_func(WASMLanguage *lang, uint32_t table_idx, int n_arg, uint32_t arg1, uint32_t arg2);
+char *ts_wasm_reset_heap(WASMLanguage *lang, size_t serialize_buffer_size);
+uint32_t ts_wasm_serialize_buffer(WASMLanguage *lang);
+uint32_t ts_wasm_call_tbl_func(WASMLanguage *lang, uint32_t table_idx, int n_res, int n_arg, uint32_t arg1, uint32_t arg2, uint32_t arg3);
 
 // END ZIG
 
@@ -117,7 +118,7 @@ bool ts_wasm_store_start(
 ) {
   LanguageWasmModule *language_module = (void *)language->keyword_lex_fn;
   language_module->current_lexer = lexer;
-  ts_wasm_reset_heap(language_module->wasm_lang);
+  ts_wasm_reset_heap(language_module->wasm_lang, TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
   fprintf(stderr, "IS START\n");
   return true;
 }
@@ -143,7 +144,9 @@ bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
 uint32_t ts_wasm_store_call_scanner_create(TSWasmStore *self) {
   LanguageWasmModule *mod = unself(self);
   fprintf(stderr, "scanner_create\n");
-  return ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_create_fn_index, 0, 0, 0);
+  uint32_t addr = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_create_fn_index, 1, 0, 0, 0, 0);
+  fprintf(stderr, "creat at %d\n", addr);
+  return addr;
 }
 
 void ts_wasm_store_call_scanner_destroy(
@@ -160,6 +163,7 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t valid_tokens_ix
 ) {
   fprintf(stderr, "scanner_scann\n");
+  abort();
   (void)self;
   (void)scanner_address;
   (void)valid_tokens_ix;
@@ -172,6 +176,7 @@ uint32_t ts_wasm_store_call_scanner_serialize(
   char *buffer
 ) {
   fprintf(stderr, "scanner_serialize\n");
+  abort();
   (void)self;
   (void)scanner_address;
   (void)buffer;
@@ -184,11 +189,16 @@ void ts_wasm_store_call_scanner_deserialize(
   const char *buffer,
   unsigned length
 ) {
-  fprintf(stderr, "scanner_deserialize\n");
-  (void)self;
-  (void)scanner_address;
-  (void)buffer;
-  (void)length;
+  LanguageWasmModule *mod = unself(self);
+  uint32_t serialization_buffer_address = ts_wasm_serialize_buffer(mod->wasm_lang);
+  uint32_t language_address;
+  char *memory = ts_wasm_get_lang_mem(mod->wasm_lang, &language_address);
+  if (length > 0) {
+    memcpy(memory+serialization_buffer_address, buffer, length);
+  }
+
+  fprintf(stderr, "scanner_deserialize %d %d %d\n", scanner_address, serialization_buffer_address, length);
+  ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_deserialize_fn_index, 0, 3, scanner_address, serialization_buffer_address, length);
 }
 
 bool ts_wasm_store_has_error(const TSWasmStore *self) {
