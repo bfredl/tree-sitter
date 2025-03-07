@@ -66,15 +66,35 @@ typedef struct {
   int32_t scanner_serialize_fn_index;
   int32_t scanner_deserialize_fn_index;
   int32_t scanner_scan_fn_index;
+  uint32_t lexer_address;
 } LanguageWasmModule;
+
+// LexerInWasmMemory - The memory layout of a `TSLexer` when compiled to wasm32.
+// This is used to copy mutable lexing state in and out of the wasm memory.
+typedef struct {
+  int32_t lookahead;
+  TSSymbol result_symbol;
+  int32_t advance;
+  int32_t mark_end;
+  int32_t get_column;
+  int32_t is_at_included_range_start;
+  int32_t eof;
+} LexerInWasmMemory;
 
 static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
   return false;
 }
 
 // ZIG BINDING
-WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name);
-char *ts_wasm_get_lang_mem(WASMLanguage *lang, uint32_t *lang_off);
+WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name, size_t lexer_size);
+char *ts_wasm_get_mem(WASMLanguage *lang);
+
+typedef struct {
+    uint32_t lang_in_mem;
+    uint32_t lexer_in_mem;
+} SharedMemInfo;
+
+void ts_wasm_get_mem_info(WASMLanguage* lang, SharedMemInfo *info);
 char *ts_wasm_reset_heap(WASMLanguage *lang, size_t serialize_buffer_size);
 uint32_t ts_wasm_serialize_buffer(WASMLanguage *lang);
 uint32_t ts_wasm_call_tbl_func(WASMLanguage *lang, uint32_t table_idx, int n_res, int n_arg, uint32_t arg1, uint32_t arg2, uint32_t arg3);
@@ -93,7 +113,7 @@ const TSLanguage *ts_wasm_store_load_language(
   uint32_t wasm_len,
   TSWasmError *wasm_error
 ) {
-  WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name);
+  WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name, sizeof(LexerInWasmMemory));
 
   LanguageWasmModule *language_module = ts_malloc(sizeof(LanguageWasmModule));
   TSLanguage *language = big_thing_copy(lang, language_module);
@@ -129,6 +149,7 @@ void ts_wasm_store_reset(TSWasmStore *self) {
 
 bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
   fprintf(stderr, "lex_main\n");
+  abort();
   (void)self;
   (void)state;
   return false;
@@ -136,6 +157,7 @@ bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
 
 bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
   fprintf(stderr, "lex_keyword\n");
+  abort();
   (void)self;
   (void)state;
   return false;
@@ -157,17 +179,38 @@ void ts_wasm_store_call_scanner_destroy(
   (void)scanner_address;
 }
 
+typedef struct {
+  int32_t lookahead;
+  TSSymbol result_symbol;
+} TSLexerDataPrefix;
 bool ts_wasm_store_call_scanner_scan(
   TSWasmStore *self,
   uint32_t scanner_address,
   uint32_t valid_tokens_ix
 ) {
   fprintf(stderr, "scanner_scann\n");
-  abort();
-  (void)self;
-  (void)scanner_address;
-  (void)valid_tokens_ix;
-  return false;
+  LanguageWasmModule *mod = unself(self);
+  char *memory = ts_wasm_get_mem(mod->wasm_lang);
+
+  memcpy(
+    &memory[mod->lexer_address],
+    mod->current_lexer,
+    sizeof(TSLexerDataPrefix)
+  );
+
+  uint32_t valid_tokens_address =
+    mod->external_states_address +
+    (valid_tokens_ix * sizeof(bool));
+  uint32_t retval = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_deserialize_fn_index, 0, 3, scanner_address, mod->lexer_address, valid_tokens_address);
+  // TODO BLUFF: if (mod->has_error) return false;
+
+  memcpy(
+    mod->current_lexer,
+    &memory[mod->lexer_address],
+    sizeof(TSLexerDataPrefix)
+  );
+
+  return retval;
 }
 
 uint32_t ts_wasm_store_call_scanner_serialize(
@@ -191,8 +234,7 @@ void ts_wasm_store_call_scanner_deserialize(
 ) {
   LanguageWasmModule *mod = unself(self);
   uint32_t serialization_buffer_address = ts_wasm_serialize_buffer(mod->wasm_lang);
-  uint32_t language_address;
-  char *memory = ts_wasm_get_lang_mem(mod->wasm_lang, &language_address);
+  char *memory = ts_wasm_get_mem(mod->wasm_lang);
   if (length > 0) {
     memcpy(memory+serialization_buffer_address, buffer, length);
   }
@@ -291,9 +333,11 @@ static void *copy_string(
 
 TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_module) {
   LanguageInWasmMemory wasm_language;
-  uint32_t language_address;
-  char *memory = ts_wasm_get_lang_mem(lang, &language_address);
-  memcpy(&wasm_language, &memory[language_address], sizeof(LanguageInWasmMemory));
+  SharedMemInfo sh;
+  char *memory = ts_wasm_get_mem(lang);
+  ts_wasm_get_mem_info(lang, &sh);
+  memcpy(&wasm_language, &memory[sh.lang_in_mem], sizeof(LanguageInWasmMemory));
+  language_module->lexer_address = sh.lexer_in_mem;
 
   bool has_supertypes =
     wasm_language.abi_version > LANGUAGE_VERSION_WITH_RESERVED_WORDS &&
@@ -328,7 +372,7 @@ TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_modu
     wasm_language.external_token_count > 0 ? wasm_language.external_scanner.scan : 0,
     wasm_language.external_token_count > 0 ? wasm_language.external_scanner.serialize : 0,
     wasm_language.external_token_count > 0 ? wasm_language.external_scanner.deserialize : 0,
-    language_address,
+    sh.lang_in_mem,
     0,  // TODO: very bluff
   };
   uint32_t address_count = array_len(addresses);

@@ -5,15 +5,22 @@ const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
 
-pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8) callconv(.c) *anyopaque {
+pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8, lexer_size: usize) callconv(.c) *anyopaque {
     const mod_data = data[0..len];
-    return wasm_load(mod_data, std.mem.span(lang_name)) catch @panic("TODO: error handling");
+    return wasm_load(mod_data, std.mem.span(lang_name), lexer_size) catch @panic("TODO: error handling");
 }
 
-pub export fn ts_wasm_get_lang_mem(lang: *WASMLanguage, off: *u32) callconv(.c) ?[*]u8 {
-    off.* = lang.lang_in_mem;
-    // TODO: bluff size check
+pub export fn ts_wasm_get_mem(lang: *WASMLanguage) callconv(.c) ?[*]u8 {
     return (lang.in.mem_get_bytes(0, lang.lang_in_mem) catch return null).ptr;
+}
+
+const SharedMemInfo = extern struct {
+    lang_in_mem: u32,
+    lexer_in_mem: u32,
+};
+
+pub export fn ts_wasm_get_mem_info(lang: *WASMLanguage, meminfo: *SharedMemInfo) void {
+    meminfo.* = .{ .lang_in_mem = lang.lang_in_mem, .lexer_in_mem = 0 };
 }
 
 pub export fn ts_wasm_reset_heap(lang: *WASMLanguage, serialize_buffer_size: usize) callconv(.c) void {
@@ -72,7 +79,7 @@ fn bulll(aa: anytype) *anyopaque {
     return @constCast(@ptrCast(aa));
 }
 
-fn wasm_load(data: []u8, langname: []u8) !*WASMLanguage {
+fn wasm_load(data: []u8, langname: []u8, lexer_size: usize) !*WASMLanguage {
     const allocator = std.heap.c_allocator;
 
     const lang = try allocator.create(WASMLanguage);
@@ -83,6 +90,8 @@ fn wasm_load(data: []u8, langname: []u8) !*WASMLanguage {
 
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit(); // module must not point to mem in "imports"
+
+    lang.memory_base = .{ .i32 = @intCast(lexer_size) };
 
     try imports.add_global("__stack_pointer", &lang.stack_pointer, .i32);
     try imports.add_global("__memory_base", &lang.memory_base, .i32);
@@ -101,8 +110,9 @@ fn wasm_load(data: []u8, langname: []u8) !*WASMLanguage {
 
     if (try mod.get_dylink_info()) |info| {
         dbg("DYLING: {}\n", .{info});
-        const pages = (info.memory_size + wasm_shelf.page_size - 1) / wasm_shelf.page_size + 1;
-        imports.memory_size = pages;
+        const memsize = lexer_size + info.memory_size + 4096; // arbitrary, but
+        const pages = (memsize + wasm_shelf.page_size - 1) / wasm_shelf.page_size + 1;
+        imports.memory_size = @intCast(pages);
         imports.func_table_size = info.table_size;
         lang.dylink_mem_size = info.memory_size;
     }
