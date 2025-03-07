@@ -147,20 +147,29 @@ void ts_wasm_store_reset(TSWasmStore *self) {
   (void)self;
 }
 
+typedef struct {
+  int32_t lookahead;
+  TSSymbol result_symbol;
+} TSLexerDataPrefix;
+
+static bool ts_wasm_store_call_lex_func(TSWasmStore *self, TSStateId state, bool kw) {
+  LanguageWasmModule *mod = unself(self);
+  char *memory = ts_wasm_get_mem(mod->wasm_lang);
+  memcpy( &memory[mod->lexer_address], mod->current_lexer, sizeof(TSLexerDataPrefix));
+  uint32_t tblfunc = kw ? mod->lex_keyword_fn_index : mod->lex_main_fn_index;
+  uint32_t res = ts_wasm_call_tbl_func(mod->wasm_lang, tblfunc, 1, 2, mod->lexer_address, state, 0);
+  memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
+  return res;
+}
+
 bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
   fprintf(stderr, "lex_main\n");
-  abort();
-  (void)self;
-  (void)state;
-  return false;
+  return ts_wasm_store_call_lex_func(self, state, false);
 }
 
 bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
   fprintf(stderr, "lex_keyword\n");
-  abort();
-  (void)self;
-  (void)state;
-  return false;
+  return ts_wasm_store_call_lex_func(self, state, true);
 }
 
 uint32_t ts_wasm_store_call_scanner_create(TSWasmStore *self) {
@@ -179,10 +188,6 @@ void ts_wasm_store_call_scanner_destroy(
   (void)scanner_address;
 }
 
-typedef struct {
-  int32_t lookahead;
-  TSSymbol result_symbol;
-} TSLexerDataPrefix;
 bool ts_wasm_store_call_scanner_scan(
   TSWasmStore *self,
   uint32_t scanner_address,
@@ -192,11 +197,7 @@ bool ts_wasm_store_call_scanner_scan(
   LanguageWasmModule *mod = unself(self);
   char *memory = ts_wasm_get_mem(mod->wasm_lang);
 
-  memcpy(
-    &memory[mod->lexer_address],
-    mod->current_lexer,
-    sizeof(TSLexerDataPrefix)
-  );
+  memcpy( &memory[mod->lexer_address], mod->current_lexer, sizeof(TSLexerDataPrefix));
 
   uint32_t valid_tokens_address =
     mod->external_states_address +
@@ -204,11 +205,7 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t retval = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_deserialize_fn_index, 0, 3, scanner_address, mod->lexer_address, valid_tokens_address);
   // TODO BLUFF: if (mod->has_error) return false;
 
-  memcpy(
-    mod->current_lexer,
-    &memory[mod->lexer_address],
-    sizeof(TSLexerDataPrefix)
-  );
+  memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
 
   return retval;
 }
