@@ -199,6 +199,7 @@ static bool ts_wasm_store_call_lex_func(TSWasmStore *self, TSStateId state, bool
   uint32_t tblfunc = kw ? mod->lex_keyword_fn_index : mod->lex_main_fn_index;
   uint32_t res = ts_wasm_call_tbl_func(mod->wasm_lang, tblfunc, 1, 2, mod->lexer_address, state, 0);
   memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
+  fprintf(stderr, "lex res: %d\n", res);
   return res;
 }
 
@@ -242,11 +243,12 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t valid_tokens_address =
     mod->external_states_address +
     (valid_tokens_ix * sizeof(bool));
-  uint32_t retval = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_deserialize_fn_index, 0, 3, scanner_address, mod->lexer_address, valid_tokens_address);
+  uint32_t retval = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_scan_fn_index, 1, 3, scanner_address, mod->lexer_address, valid_tokens_address);
   // TODO BLUFF: if (mod->has_error) return false;
 
   memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
 
+  fprintf(stderr, "scann res: %d\n", retval);
   return retval;
 }
 

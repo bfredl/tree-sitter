@@ -75,6 +75,14 @@ fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) e
     }.cb;
 }
 
+extern fn iswspace(c_int) c_int;
+fn cb_iswspace(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = in;
+    _ = data;
+
+    const cp = args_ret[0].i32;
+    args_ret[0].i32 = iswspace(cp);
+}
 const WASMLanguage = struct {
     stack_pointer: StackValue = .{ .i32 = 0 },
     memory_base: StackValue = .{ .i32 = 0 },
@@ -113,7 +121,7 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     try imports.add_global("__table_base", &lang.table_base, .i32);
     try imports.add_func("calloc", .{ .cb = &cb_calloc, .data = @ptrCast(lang), .n_args = 2, .n_res = 1 });
     try imports.add_func("towupper", .{ .cb = &trap, .data = bulll("towupper"), .n_args = 1, .n_res = 1 });
-    try imports.add_func("iswspace", .{ .cb = &trap, .data = bulll("iswspace"), .n_args = 1, .n_res = 1 });
+    try imports.add_func("iswspace", .{ .cb = &cb_iswspace, .data = bulll("iswspace"), .n_args = 1, .n_res = 1 });
     try imports.add_func("strlen", .{ .cb = &trap, .data = bulll("strlen"), .n_args = 1, .n_res = 1 });
     try imports.add_func("memcmp", .{ .cb = &trap, .data = bulll("memcmp"), .n_args = 3, .n_res = 1 });
     try imports.add_func("free", .{ .cb = &trap, .data = bulll("free"), .n_args = 1, .n_res = 0 });
