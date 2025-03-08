@@ -5,9 +5,9 @@ const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
 
-pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8, lexer_size: usize) callconv(.c) *anyopaque {
+pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8, lexer_size: usize, any: *anyopaque) callconv(.c) *anyopaque {
     const mod_data = data[0..len];
-    return wasm_load(mod_data, std.mem.span(lang_name), lexer_size) catch @panic("TODO: error handling");
+    return wasm_load(mod_data, std.mem.span(lang_name), lexer_size, any) catch @panic("TODO: error handling");
 }
 
 pub export fn ts_wasm_get_mem(lang: *WASMLanguage) callconv(.c) ?[*]u8 {
@@ -35,6 +35,8 @@ pub export fn ts_wasm_serialize_buffer(lang: *WASMLanguage) callconv(.c) u32 {
 pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: c_int, n_arg: c_int, arg1: u32, arg2: u32, arg3: u32) callconv(.c) u32 {
     return wasm_call_tbl_func(lang, table_idx, n_res, n_arg, arg1, arg2, arg3) catch @panic("TODO: error handling");
 }
+
+pub extern fn ts_wasm_lexer_cb(data: *anyopaque, idx: u32, param_1: u32) u32;
 
 fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     _ = args_ret;
@@ -66,11 +68,9 @@ fn cb_calloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) error{WASMTrap}!void {
     return &struct {
         fn cb(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
-            _ = args_ret;
             _ = in;
-            _ = data;
-            std.debug.print("LEXER func {}\n", .{idx});
-            return error.WASMTrap;
+            const res = ts_wasm_lexer_cb(data, idx, if (args_ret.len >= 2) args_ret[1].u32() else 0);
+            args_ret[0] = .{ .i32 = @bitCast(res) };
         }
     }.cb;
 }
@@ -91,7 +91,7 @@ fn bulll(aa: anytype) *anyopaque {
     return @constCast(@ptrCast(aa));
 }
 
-fn wasm_load(data: []u8, langname: []u8, lexer_size: usize) !*WASMLanguage {
+fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*WASMLanguage {
     const allocator = std.heap.c_allocator;
 
     const lang = try allocator.create(WASMLanguage);
@@ -133,11 +133,11 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize) !*WASMLanguage {
         lang.dylink_mem_size = info.memory_size;
     }
 
-    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(0), .data = bulll("lexer.advance"), .n_args = 2, .n_res = 0 });
-    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(1), .data = bulll("lexer.mark_end"), .n_args = 1, .n_res = 0 });
-    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(2), .data = bulll("lexer.get_column"), .n_args = 1, .n_res = 1 });
-    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(3), .data = bulll("lexer.is_at_included_range_start"), .n_args = 1, .n_res = 1 });
-    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(4), .data = bulll("lexer.eof"), .n_args = 1, .n_res = 1 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(0), .data = any, .n_args = 2, .n_res = 0 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(1), .data = any, .n_args = 1, .n_res = 0 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(2), .data = any, .n_args = 1, .n_res = 1 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(3), .data = any, .n_args = 1, .n_res = 1 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(4), .data = any, .n_args = 1, .n_res = 1 });
 
     lang.in = try .init(mod, &imports);
     const in = &lang.in;

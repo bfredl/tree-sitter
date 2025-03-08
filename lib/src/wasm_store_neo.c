@@ -86,7 +86,7 @@ static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
 }
 
 // ZIG BINDING
-WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name, size_t lexer_size);
+WASMLanguage *ts_wasm_load(const char *data, size_t len, const char* lang_name, size_t lexer_size, void *any);
 char *ts_wasm_get_mem(WASMLanguage *lang);
 
 typedef struct {
@@ -113,9 +113,9 @@ const TSLanguage *ts_wasm_store_load_language(
   uint32_t wasm_len,
   TSWasmError *wasm_error
 ) {
-  WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name, sizeof(LexerInWasmMemory));
-
   LanguageWasmModule *language_module = ts_malloc(sizeof(LanguageWasmModule));
+  WASMLanguage *lang = ts_wasm_load(wasm, wasm_len, language_name, sizeof(LexerInWasmMemory), language_module);
+
   TSLanguage *language = big_thing_copy(lang, language_module);
   language->lex_fn = ts_wasm_store__sentinel_lex_fn;
   language->keyword_lex_fn = (bool (*)(TSLexer *, TSStateId))language_module;
@@ -138,6 +138,29 @@ const TSLanguage *ts_wasm_store_load_language(
   memcpy(&memory[sh.lexer_in_mem], &lexer, sizeof lexer);
 
   return language;
+}
+
+
+uint32_t ts_wasm_lexer_cb(void *data, uint32_t idx, uint32_t param_1) {
+  LanguageWasmModule *mod = data;
+  TSLexer *lexer = mod->current_lexer;
+  switch (idx) {
+    case 0:
+      lexer->advance(lexer, param_1);
+      char *memory = ts_wasm_get_mem(mod->wasm_lang);
+      memcpy(&memory[mod->lexer_address], &lexer->lookahead, sizeof(lexer->lookahead));
+      return 0;
+    case 1:
+      lexer->mark_end(lexer);
+      return 0;
+    case 2:
+      return lexer->get_column(lexer);
+    case 3:
+      return lexer->is_at_included_range_start(lexer);
+    case 4:
+      return lexer->eof(lexer);
+    default: abort();
+  }
 }
 
 void ts_wasm_store_delete(TSWasmStore *self) {
