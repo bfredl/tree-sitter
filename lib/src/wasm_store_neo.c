@@ -120,9 +120,7 @@ const TSLanguage *ts_wasm_store_load_language(
   language->lex_fn = ts_wasm_store__sentinel_lex_fn;
   language->keyword_lex_fn = (bool (*)(TSLexer *, TSStateId))language_module;
 
-  SharedMemInfo sh;
   char *memory = ts_wasm_get_mem(lang);
-  ts_wasm_get_mem_info(lang, &sh);
 
   LexerInWasmMemory lexer = {
     .lookahead = 0,
@@ -135,7 +133,8 @@ const TSLanguage *ts_wasm_store_load_language(
     .is_at_included_range_start = 3,
     .eof = 4,
   };
-  memcpy(&memory[sh.lexer_in_mem], &lexer, sizeof lexer);
+  fprintf(stderr, "PUT IT AT %d\n", language_module->lexer_address);
+  memcpy(&memory[language_module->lexer_address], &lexer, sizeof lexer);
 
   return language;
 }
@@ -149,6 +148,7 @@ uint32_t ts_wasm_lexer_cb(void *data, uint32_t idx, uint32_t param_1) {
       lexer->advance(lexer, param_1);
       char *memory = ts_wasm_get_mem(mod->wasm_lang);
       memcpy(&memory[mod->lexer_address], &lexer->lookahead, sizeof(lexer->lookahead));
+      fprintf(stderr, "ADVANCE: lookahead is now %d\n", lexer->lookahead);
       return 0;
     case 1:
       lexer->mark_end(lexer);
@@ -234,11 +234,22 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t scanner_address,
   uint32_t valid_tokens_ix
 ) {
-  fprintf(stderr, "scanner_scann\n");
+  fprintf(stderr, "scanner_scann %d\n", scanner_address);
   LanguageWasmModule *mod = unself(self);
   char *memory = ts_wasm_get_mem(mod->wasm_lang);
 
   memcpy( &memory[mod->lexer_address], mod->current_lexer, sizeof(TSLexerDataPrefix));
+
+  {
+    LexerInWasmMemory sanity;
+
+  fprintf(stderr, "FOUND IT AT %d\n", mod->lexer_address);
+  memcpy( &sanity, &memory[mod->lexer_address], sizeof(LexerInWasmMemory));
+  fprintf(stderr, "test of echo %d %d %d %d %d \n", sanity.advance, sanity.mark_end, sanity.get_column, sanity.is_at_included_range_start, sanity.eof);
+
+  }
+
+      fprintf(stderr, "scan: lookahead is now %d\n", mod->current_lexer->lookahead);
 
   uint32_t valid_tokens_address =
     mod->external_states_address +
@@ -376,7 +387,7 @@ TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_modu
   char *memory = ts_wasm_get_mem(lang);
   ts_wasm_get_mem_info(lang, &sh);
   memcpy(&wasm_language, &memory[sh.lang_in_mem], sizeof(LanguageInWasmMemory));
-  language_module->lexer_address = sh.lexer_in_mem;
+  fprintf(stderr, "specify it at %d\n", sh.lexer_in_mem);
 
   bool has_supertypes =
     wasm_language.abi_version > LANGUAGE_VERSION_WITH_RESERVED_WORDS &&
@@ -594,6 +605,7 @@ TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_modu
     .scanner_serialize_fn_index = wasm_language.external_scanner.serialize,
     .scanner_deserialize_fn_index = wasm_language.external_scanner.deserialize,
     .scanner_scan_fn_index = wasm_language.external_scanner.scan,
+    .lexer_address = sh.lexer_in_mem,
   };
   return language;
 }
