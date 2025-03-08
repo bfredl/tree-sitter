@@ -120,6 +120,23 @@ const TSLanguage *ts_wasm_store_load_language(
   language->lex_fn = ts_wasm_store__sentinel_lex_fn;
   language->keyword_lex_fn = (bool (*)(TSLexer *, TSStateId))language_module;
 
+  SharedMemInfo sh;
+  char *memory = ts_wasm_get_mem(lang);
+  ts_wasm_get_mem_info(lang, &sh);
+
+  LexerInWasmMemory lexer = {
+    .lookahead = 0,
+    .result_symbol = 0,
+    // TODO: this a hack, reconsider the boundary so these can be plain
+    // assignments
+    .advance = 0,
+    .mark_end = 1,
+    .get_column = 2,
+    .is_at_included_range_start = 3,
+    .eof = 4,
+  };
+  memcpy(&memory[sh.lexer_in_mem], &lexer, sizeof lexer);
+
   return language;
 }
 

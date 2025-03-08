@@ -63,6 +63,18 @@ fn cb_calloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     args_ret[0].i32 = @bitCast(try wasm_heap_alloc(lang, size));
 }
 
+fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) error{WASMTrap}!void {
+    return &struct {
+        fn cb(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+            _ = args_ret;
+            _ = in;
+            _ = data;
+            std.debug.print("LEXER func {}\n", .{idx});
+            return error.WASMTrap;
+        }
+    }.cb;
+}
+
 const WASMLanguage = struct {
     stack_pointer: StackValue = .{ .i32 = 0 },
     memory_base: StackValue = .{ .i32 = 0 },
@@ -91,7 +103,10 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize) !*WASMLanguage {
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit(); // module must not point to mem in "imports"
 
+    const n_table_funcs = 5;
+
     lang.memory_base = .{ .i32 = @intCast(lexer_size) };
+    lang.table_base = .{ .i32 = n_table_funcs };
 
     try imports.add_global("__stack_pointer", &lang.stack_pointer, .i32);
     try imports.add_global("__memory_base", &lang.memory_base, .i32);
@@ -108,14 +123,21 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize) !*WASMLanguage {
     try imports.add_func("strncpy", .{ .cb = &trap, .data = bulll("strncpy"), .n_args = 3, .n_res = 1 });
     try imports.add_func("iswalnum", .{ .cb = &trap, .data = bulll("iswaifu"), .n_args = 1, .n_res = 1 });
 
+    imports.func_table_size = n_table_funcs;
     if (try mod.get_dylink_info()) |info| {
         dbg("DYLING: {}\n", .{info});
         const memsize = lexer_size + info.memory_size + 4096; // arbitrary, but
         const pages = (memsize + wasm_shelf.page_size - 1) / wasm_shelf.page_size + 1;
         imports.memory_size = @intCast(pages);
-        imports.func_table_size = info.table_size;
+        imports.func_table_size += info.table_size;
         lang.dylink_mem_size = info.memory_size;
     }
+
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(0), .data = bulll("lexer.advance"), .n_args = 2, .n_res = 0 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(1), .data = bulll("lexer.mark_end"), .n_args = 1, .n_res = 0 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(2), .data = bulll("lexer.get_column"), .n_args = 1, .n_res = 1 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(3), .data = bulll("lexer.is_at_included_range_start"), .n_args = 1, .n_res = 1 });
+    _ = try imports.add_func_to_table(.{ .cb = cb_lexer(4), .data = bulll("lexer.eof"), .n_args = 1, .n_res = 1 });
 
     lang.in = try .init(mod, &imports);
     const in = &lang.in;
