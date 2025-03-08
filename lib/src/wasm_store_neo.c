@@ -268,12 +268,21 @@ uint32_t ts_wasm_store_call_scanner_serialize(
   uint32_t scanner_address,
   char *buffer
 ) {
-  fprintf(stderr, "scanner_serialize\n");
-  abort();
-  (void)self;
-  (void)scanner_address;
-  (void)buffer;
-  return 0;
+  LanguageWasmModule *mod = unself(self);
+  uint32_t serialization_buffer_address = ts_wasm_serialize_buffer(mod->wasm_lang);
+  fprintf(stderr, "scanner_serialize %d %d\n", scanner_address, serialization_buffer_address);
+  uint32_t length = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_serialize_fn_index, 1, 2, scanner_address, serialization_buffer_address, 0);
+  char *memory = ts_wasm_get_mem(mod->wasm_lang);
+  fprintf(stderr, "====> lenght %d \n", length);
+  if (length > TREE_SITTER_SERIALIZATION_BUFFER_SIZE) {
+    abort(); // TODO
+  }
+  if (length > 0) {
+    // NB: reference uses lexer->debug_buffer but it is the same
+    memcpy(buffer, memory+serialization_buffer_address, length);
+  }
+
+  return length;
 }
 
 void ts_wasm_store_call_scanner_deserialize(

@@ -24,12 +24,12 @@ pub export fn ts_wasm_get_mem_info(lang: *WASMLanguage, meminfo: *SharedMemInfo)
 }
 
 pub export fn ts_wasm_reset_heap(lang: *WASMLanguage, serialize_buffer_size: usize) callconv(.c) void {
-    lang.heap_start = @intCast(lang.dylink_mem_size + serialize_buffer_size);
+    lang.heap_start = @intCast(lang.current_memory_offset + serialize_buffer_size);
     lang.heap_pos = lang.heap_start;
 }
 
 pub export fn ts_wasm_serialize_buffer(lang: *WASMLanguage) callconv(.c) u32 {
-    return lang.dylink_mem_size;
+    return lang.current_memory_offset;
 }
 
 pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: c_int, n_arg: c_int, arg1: u32, arg2: u32, arg3: u32) callconv(.c) u32 {
@@ -58,12 +58,13 @@ fn wasm_heap_alloc(lang: *WASMLanguage, size: u32) !u32 {
 }
 
 fn cb_calloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
-    _ = in;
     const lang: *WASMLanguage = @alignCast(@ptrCast(data));
 
     // TODO: when recycling memory, need to memset it zero
     const size = args_ret[0].u32() * args_ret[1].u32();
-    args_ret[0].i32 = @bitCast(try wasm_heap_alloc(lang, size));
+    const mem = try wasm_heap_alloc(lang, size);
+    @memset(in.mem.items[mem..][0..size], 0);
+    args_ret[0].i32 = @bitCast(mem);
 }
 
 fn cb_malloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
@@ -72,6 +73,12 @@ fn cb_malloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 
     const size = args_ret[0].u32();
     args_ret[0].i32 = @bitCast(try wasm_heap_alloc(lang, size));
+}
+
+fn cb_free(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = in;
+    _ = args_ret;
+    _ = data;
 }
 
 fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) error{WASMTrap}!void {
@@ -120,6 +127,24 @@ fn cb_strlen(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     args_ret[0].i32 = @bitCast(@as(u32, @intCast(len)));
 }
 
+fn cb_memcmp(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+
+    const m = in.mem.items;
+    const ptr1 = args_ret[0].u32();
+    const ptr2 = args_ret[0].u32();
+    const len = args_ret[0].u32();
+    for (ptr1..ptr1 + len, ptr2..ptr2 + len) |p1, p2| {
+        if (p1 >= m.len or p2 >= m.len) return error.WASMTrap;
+        const cmp: i32 = @as(i32, m[p1]) - @as(i32, m[p2]);
+        if (cmp != 0) {
+            args_ret[0].i32 = cmp;
+            return;
+        }
+    }
+    args_ret[0].i32 = 0;
+    return;
+}
 const WASMLanguage = struct {
     stack_pointer: StackValue = .{ .i32 = 0 },
     memory_base: StackValue = .{ .i32 = 0 },
@@ -129,6 +154,7 @@ const WASMLanguage = struct {
     lang_in_mem: u32 = undefined,
     lexer_in_mem: u32 = undefined,
     dylink_mem_size: u32 = 0,
+    current_memory_offset: u32 = 0,
     heap_start: u32 = 0,
     heap_pos: u32 = 0,
 };
@@ -165,8 +191,8 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     try imports.add_func("towupper", .{ .cb = &cb_towupper, .data = bulll("towupper"), .n_args = 1, .n_res = 1 });
     try imports.add_func("iswspace", .{ .cb = &cb_iswspace, .data = bulll("iswspace"), .n_args = 1, .n_res = 1 });
     try imports.add_func("strlen", .{ .cb = &cb_strlen, .data = bulll("strlen"), .n_args = 1, .n_res = 1 });
-    try imports.add_func("memcmp", .{ .cb = &trap, .data = bulll("memcmp"), .n_args = 3, .n_res = 1 });
-    try imports.add_func("free", .{ .cb = &trap, .data = bulll("free"), .n_args = 1, .n_res = 0 });
+    try imports.add_func("memcmp", .{ .cb = &cb_memcmp, .data = bulll("memcmp"), .n_args = 3, .n_res = 1 });
+    try imports.add_func("free", .{ .cb = &cb_free, .data = @ptrCast(lang), .n_args = 1, .n_res = 0 });
     try imports.add_func("realloc", .{ .cb = &trap, .data = bulll("realloc"), .n_args = 2, .n_res = 1 });
     try imports.add_func("malloc", .{ .cb = &cb_malloc, .data = @ptrCast(lang), .n_args = 1, .n_res = 1 });
     try imports.add_func("__assert_fail", .{ .cb = &trap, .data = bulll("__assert_fail"), .n_args = 4, .n_res = 0 });
@@ -182,6 +208,7 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
         imports.func_table_size += info.table_size;
         lang.dylink_mem_size = info.memory_size;
     }
+    lang.current_memory_offset = @intCast(memory_base + lang.dylink_mem_size);
 
     _ = try imports.add_func_to_table(.{ .cb = cb_lexer(0), .data = any, .n_args = 2, .n_res = 0 });
     _ = try imports.add_func_to_table(.{ .cb = cb_lexer(1), .data = any, .n_args = 1, .n_res = 0 });
