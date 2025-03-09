@@ -308,7 +308,7 @@ bool ts_wasm_store_has_error(const TSWasmStore *self) {
 }
 
 bool ts_language_is_wasm(const TSLanguage *self) {
-  fprintf(stderr, "it is? %d\n", self->lex_fn == ts_wasm_store__sentinel_lex_fn);
+  // fprintf(stderr, "it is? %d\n", self->lex_fn == ts_wasm_store__sentinel_lex_fn);
   return self->lex_fn == ts_wasm_store__sentinel_lex_fn;
 }
 
