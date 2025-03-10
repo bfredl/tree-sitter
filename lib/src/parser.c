@@ -407,6 +407,7 @@ static unsigned ts_parser__external_scanner_serialize(
       self->external_scanner_payload,
       self->lexer.debug_buffer
     );
+    fprintf(stderr, "normie serialize: %d\n", length);
     ts_assert(length <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
     return length;
   }

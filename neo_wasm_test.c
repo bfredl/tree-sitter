@@ -44,6 +44,7 @@ static const char *wasmerr_to_str(TSWasmErrorKind werr)
 }
 
 int main(int argc, char **argv) {
+  fprintf(stderr, "fyyyyyy\n"); exite(111);
 
 #ifdef BACKHOLD
   TSLanguage *tree_sitter_html(void), *lang = tree_sitter_html();
