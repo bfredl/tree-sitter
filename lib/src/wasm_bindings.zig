@@ -5,6 +5,14 @@ const wasm_shelf = @import("wasm_shelf");
 const StackValue = wasm_shelf.StackValue;
 const Instance = wasm_shelf.Instance;
 
+// EXPORTS:
+const SharedMemInfo = extern struct {
+    lang_in_mem: u32,
+    lexer_in_mem: u32,
+    dylink_mem_start: u32,
+    dylink_mem_size: u32,
+};
+
 pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8, lexer_size: usize, any: *anyopaque) callconv(.c) *anyopaque {
     const mod_data = data[0..len];
     return wasm_load(mod_data, std.mem.span(lang_name), lexer_size, any) catch @panic("TODO: error handling");
@@ -14,13 +22,8 @@ pub export fn ts_wasm_get_mem(lang: *WASMLanguage) callconv(.c) ?[*]u8 {
     return (lang.in.mem_get_bytes(0, lang.lang_in_mem) catch return null).ptr;
 }
 
-const SharedMemInfo = extern struct {
-    lang_in_mem: u32,
-    lexer_in_mem: u32,
-};
-
 pub export fn ts_wasm_get_mem_info(lang: *WASMLanguage, meminfo: *SharedMemInfo) void {
-    meminfo.* = .{ .lang_in_mem = lang.lang_in_mem, .lexer_in_mem = lang.lexer_in_mem };
+    meminfo.* = .{ .lang_in_mem = lang.lang_in_mem, .lexer_in_mem = lang.lexer_in_mem, .dylink_mem_start = lang.dylink_mem_base, .dylink_mem_size = lang.dylink_mem_size };
 }
 
 pub export fn ts_wasm_reset_heap(lang: *WASMLanguage, serialize_buffer_size: usize) callconv(.c) void {
@@ -36,6 +39,7 @@ pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: 
     return wasm_call_tbl_func(lang, table_idx, n_res, n_arg, arg1, arg2, arg3) catch @panic("TODO: error handling");
 }
 
+// IMPORTS:
 pub extern fn ts_wasm_lexer_cb(data: *anyopaque, idx: u32, param_1: u32) u32;
 
 fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
@@ -153,6 +157,7 @@ const WASMLanguage = struct {
     in: Instance = undefined,
     lang_in_mem: u32 = undefined,
     lexer_in_mem: u32 = undefined,
+    dylink_mem_base: u32 = 0,
     dylink_mem_size: u32 = 0,
     current_memory_offset: u32 = 0,
     heap_start: u32 = 0,
@@ -180,6 +185,7 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     const lexer_in_mem = 2048; // this is arbitrary, but likely should not be zero
     const memory_base = lexer_in_mem + lexer_size;
 
+    lang.dylink_mem_base = @intCast(memory_base);
     lang.memory_base = .{ .i32 = @intCast(memory_base) };
     lang.table_base = .{ .i32 = n_table_funcs };
     lang.stack_pointer = .{ .i32 = 2032 };
@@ -201,7 +207,6 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
 
     imports.func_table_size = n_table_funcs;
     if (try mod.get_dylink_info()) |info| {
-        dbg("DYLING: {}\n", .{info});
         const memsize = memory_base + info.memory_size + 4096; // arbitrary, but need a bit of heap (not much)
         const pages = (memsize + wasm_shelf.page_size - 1) / wasm_shelf.page_size + 1;
         imports.memory_size = @intCast(pages);
@@ -225,7 +230,6 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
 
     for (initializers) |init| {
         if (try mod.lookup_export(init)) |sym| {
-            dbg("INIT: {s}\n", .{init});
             if (sym.kind != .func) @panic("nej");
             _ = try in.execute(sym.idx, &.{}, &.{}, true);
         }
@@ -238,7 +242,6 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     var res: [1]StackValue = undefined;
     _ = try in.execute(sym.idx, &.{}, &res, true);
 
-    dbg("HERE IS THE RESULT: {}\n", .{res[0].i32});
     lang.lang_in_mem = res[0].u32();
     lang.lexer_in_mem = lexer_in_mem;
 
