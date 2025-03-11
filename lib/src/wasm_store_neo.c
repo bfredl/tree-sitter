@@ -136,7 +136,6 @@ const TSLanguage *ts_wasm_store_load_language(
     .is_at_included_range_start = 3,
     .eof = 4,
   };
-  // fprintf(stderr, "PUT IT AT %d\n", language_module->lexer_address);
   memcpy(&memory[language_module->lexer_address], &lexer, sizeof lexer);
 
   return language;
@@ -151,7 +150,6 @@ uint32_t ts_wasm_lexer_cb(void *data, uint32_t idx, uint32_t param_1) {
       lexer->advance(lexer, param_1);
       char *memory = ts_wasm_get_mem(mod->wasm_lang);
       memcpy(&memory[mod->lexer_address], &lexer->lookahead, sizeof(lexer->lookahead));
-      // fprintf(stderr, "ADVANCE: lookahead is now %d\n", lexer->lookahead);
       return 0;
     case 1:
       lexer->mark_end(lexer);
@@ -182,7 +180,6 @@ bool ts_wasm_store_start(
   LanguageWasmModule *language_module = (void *)language->keyword_lex_fn;
   language_module->current_lexer = lexer;
   ts_wasm_reset_heap(language_module->wasm_lang, TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
-  // fprintf(stderr, "IS START\n");
   return true;
 }
 
@@ -202,25 +199,20 @@ static bool ts_wasm_store_call_lex_func(TSWasmStore *self, TSStateId state, bool
   uint32_t tblfunc = kw ? mod->lex_keyword_fn_index : mod->lex_main_fn_index;
   uint32_t res = ts_wasm_call_tbl_func(mod->wasm_lang, tblfunc, 1, 2, mod->lexer_address, state, 0);
   memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
-  // fprintf(stderr, "lex res: %d\n", res);
   return res;
 }
 
 bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
-  // fprintf(stderr, "lex_main\n");
   return ts_wasm_store_call_lex_func(self, state, false);
 }
 
 bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
-   // fprintf(stderr, "lex_keyword\n");
   return ts_wasm_store_call_lex_func(self, state, true);
 }
 
 uint32_t ts_wasm_store_call_scanner_create(TSWasmStore *self) {
   LanguageWasmModule *mod = unself(self);
-  fprintf(stderr, "scanner_create\n");
   uint32_t addr = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_create_fn_index, 1, 0, 0, 0, 0);
-  fprintf(stderr, "creat at %d\n", addr);
   return addr;
 }
 
@@ -237,22 +229,10 @@ bool ts_wasm_store_call_scanner_scan(
   uint32_t scanner_address,
   uint32_t valid_tokens_ix
 ) {
-  // fprintf(stderr, "scanner_scann %d\n", scanner_address);
   LanguageWasmModule *mod = unself(self);
   char *memory = ts_wasm_get_mem(mod->wasm_lang);
-
   memcpy( &memory[mod->lexer_address], mod->current_lexer, sizeof(TSLexerDataPrefix));
 
-  {
-    LexerInWasmMemory sanity;
-
-  //fprintf(stderr, "FOUND IT AT %d\n", mod->lexer_address);
-  memcpy( &sanity, &memory[mod->lexer_address], sizeof(LexerInWasmMemory));
-  // fprintf(stderr, "test of echo %d %d %d %d %d \n", sanity.advance, sanity.mark_end, sanity.get_column, sanity.is_at_included_range_start, sanity.eof);
-
-  }
-
-      // fprintf(stderr, "scan: lookahead is now %d\n", mod->current_lexer->lookahead);
 
   uint32_t valid_tokens_address =
     mod->external_states_address +
@@ -262,7 +242,6 @@ bool ts_wasm_store_call_scanner_scan(
 
   memcpy( mod->current_lexer, &memory[mod->lexer_address], sizeof(TSLexerDataPrefix));
 
-  // fprintf(stderr, "scann res: %d\n", retval);
   return retval;
 }
 
@@ -273,10 +252,8 @@ uint32_t ts_wasm_store_call_scanner_serialize(
 ) {
   LanguageWasmModule *mod = unself(self);
   uint32_t serialization_buffer_address = ts_wasm_serialize_buffer(mod->wasm_lang);
-  fprintf(stderr, "scanner_serialize %d %d\n", scanner_address, serialization_buffer_address);
   uint32_t length = ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_serialize_fn_index, 1, 2, scanner_address, serialization_buffer_address, 0);
   char *memory = ts_wasm_get_mem(mod->wasm_lang);
-  fprintf(stderr, "====> lenght %d \n", length);
   if (length > TREE_SITTER_SERIALIZATION_BUFFER_SIZE) {
     abort(); // TODO
   }
@@ -301,7 +278,6 @@ void ts_wasm_store_call_scanner_deserialize(
     memcpy(memory+serialization_buffer_address, buffer, length);
   }
 
-  // fprintf(stderr, "scanner_deserialize %d %d %d\n", scanner_address, serialization_buffer_address, length);
   ts_wasm_call_tbl_func(mod->wasm_lang, mod->scanner_deserialize_fn_index, 0, 3, scanner_address, serialization_buffer_address, length);
 }
 
@@ -311,7 +287,6 @@ bool ts_wasm_store_has_error(const TSWasmStore *self) {
 }
 
 bool ts_language_is_wasm(const TSLanguage *self) {
-  // fprintf(stderr, "it is? %d\n", self->lex_fn == ts_wasm_store__sentinel_lex_fn);
   return self->lex_fn == ts_wasm_store__sentinel_lex_fn;
 }
 
@@ -322,9 +297,6 @@ void ts_wasm_language_retain(const TSLanguage *self) {
 void ts_wasm_language_release(const TSLanguage *self) {
   (void)self;
 }
-
-#define array_len(a) (sizeof(a) / sizeof(a[0]))
-typedef Array(char) StringData;
 
 static void *copy_strings(
   const uint8_t *data,
@@ -356,7 +328,6 @@ TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_modu
 #define static_mem(addr) ((void *)&static_mem_copy[addr - sh.dylink_mem_start])
 
   memcpy(&wasm_language, aliased_wasm_language, sizeof(LanguageInWasmMemory));
-  fprintf(stderr, "specify it at %d\n", sh.lexer_in_mem);
 
   bool has_supertypes =
     wasm_language.abi_version > LANGUAGE_VERSION_WITH_RESERVED_WORDS &&
