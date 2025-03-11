@@ -396,21 +396,26 @@ static void ts_parser__external_scanner_destroy(
 static unsigned ts_parser__external_scanner_serialize(
   TSParser *self
 ) {
+  unsigned length;
   if (ts_language_is_wasm(self->language)) {
-    return ts_wasm_store_call_scanner_serialize(
+    length = ts_wasm_store_call_scanner_serialize(
       self->wasm_store,
       (uintptr_t)self->external_scanner_payload,
       self->lexer.debug_buffer
     );
   } else {
-    uint32_t length = self->language->external_scanner.serialize(
+    length = self->language->external_scanner.serialize(
       self->external_scanner_payload,
       self->lexer.debug_buffer
     );
-    fprintf(stderr, "normie serialize: %d\n", length);
     ts_assert(length <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
-    return length;
   }
+  fprintf(stderr, "serialize len %d:\n", length);
+  for (int i = 0; i < length; i++) {
+    fprintf(stderr, "%02x ", (int)(unsigned char)self->lexer.debug_buffer[i]);
+  }
+  fprintf(stderr, "\n");
+  return length;
 }
 
 static void ts_parser__external_scanner_deserialize(
@@ -546,6 +551,7 @@ static Subtree ts_parser__lex(
       ts_lexer_start(&self->lexer);
       ts_parser__external_scanner_deserialize(self, external_token);
       found_token = ts_parser__external_scanner_scan(self, lex_mode.external_lex_state);
+      fprintf(stderr, "found %d %d\n", (int)found_token, self->lexer.data.result_symbol);
       if (self->has_scanner_error) return NULL_SUBTREE;
       ts_lexer_finish(&self->lexer, &lookahead_end_byte);
 

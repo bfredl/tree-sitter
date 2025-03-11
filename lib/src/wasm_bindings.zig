@@ -132,8 +132,8 @@ fn cb_memcmp(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 
     const m = in.mem.items;
     const ptr1 = args_ret[0].u32();
-    const ptr2 = args_ret[0].u32();
-    const len = args_ret[0].u32();
+    const ptr2 = args_ret[1].u32();
+    const len = args_ret[2].u32();
     for (ptr1..ptr1 + len, ptr2..ptr2 + len) |p1, p2| {
         if (p1 >= m.len or p2 >= m.len) return error.WASMTrap;
         const cmp: i32 = @as(i32, m[p1]) - @as(i32, m[p2]);

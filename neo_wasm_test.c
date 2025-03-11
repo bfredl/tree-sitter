@@ -44,8 +44,6 @@ static const char *wasmerr_to_str(TSWasmErrorKind werr)
 }
 
 int main(int argc, char **argv) {
-  fprintf(stderr, "fyyyyyy\n"); exite(111);
-
 #ifdef BACKHOLD
   TSLanguage *tree_sitter_html(void), *lang = tree_sitter_html();
 #else
@@ -83,12 +81,12 @@ int main(int argc, char **argv) {
   ts_parser_set_wasm_store(parser, (TSWasmStore *)lang);
   ts_parser_set_language(parser, lang);
 
-  fprintf(stderr, "is set! \n");
+  //fprintf(stderr, "is set! \n");
 
   const char *source_code = "<html><body>halloj</body></html>";
   TSTree *tree = ts_parser_parse_string( parser, NULL, source_code, strlen(source_code));
 
-  fprintf(stderr, "is tree: %p\n", tree);
+  fprintf(stderr, "is tree: %d\n", !!tree);
 
   ts_tree_print_dot_graph(tree, 1);
   return 0;

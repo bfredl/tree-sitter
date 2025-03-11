@@ -133,7 +133,7 @@ const TSLanguage *ts_wasm_store_load_language(
     .is_at_included_range_start = 3,
     .eof = 4,
   };
-  fprintf(stderr, "PUT IT AT %d\n", language_module->lexer_address);
+  // fprintf(stderr, "PUT IT AT %d\n", language_module->lexer_address);
   memcpy(&memory[language_module->lexer_address], &lexer, sizeof lexer);
 
   return language;
@@ -179,7 +179,7 @@ bool ts_wasm_store_start(
   LanguageWasmModule *language_module = (void *)language->keyword_lex_fn;
   language_module->current_lexer = lexer;
   ts_wasm_reset_heap(language_module->wasm_lang, TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
-  fprintf(stderr, "IS START\n");
+  // fprintf(stderr, "IS START\n");
   return true;
 }
 
