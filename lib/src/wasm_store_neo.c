@@ -109,6 +109,7 @@ TSWasmStore *ts_wasm_store_new(TSWasmEngine *engine, TSWasmError *wasm_error) {
 }
 
 TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_module);
+
 const TSLanguage *ts_wasm_store_load_language(
   TSWasmStore *self,
   const char *language_name,
