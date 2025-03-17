@@ -35,8 +35,9 @@ pub export fn ts_wasm_serialize_buffer(lang: *WASMLanguage) callconv(.c) u32 {
     return lang.current_memory_offset;
 }
 
-pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: c_int, n_arg: c_int, arg1: u32, arg2: u32, arg3: u32) callconv(.c) u32 {
-    return wasm_call_tbl_func(lang, table_idx, n_res, n_arg, arg1, arg2, arg3) catch @panic("TODO: error handling");
+pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: c_int, n_arg: c_int, arg1: u32, arg2: u32, arg3: u32, res: *u32) callconv(.c) bool {
+    res.* = wasm_call_tbl_func(lang, table_idx, n_res, n_arg, arg1, arg2, arg3) catch return false;
+    return true;
 }
 
 // IMPORTS:
