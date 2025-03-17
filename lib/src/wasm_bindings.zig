@@ -52,12 +52,15 @@ fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 }
 
 fn wasm_heap_alloc(lang: *WASMLanguage, size: u32) !u32 {
-    const start = lang.heap_pos;
-    lang.heap_pos += size;
-    lang.heap_pos += (lang.heap_pos + 1) & 3 - 1; // align 4 because why not
-    if (lang.heap_pos > lang.in.mem.items.len) {
+    if (lang.heap_pos & 3 != 0) @panic("noooo");
+    const size_align = size + 3 - ((size + 3) & 3);
+    if (lang.heap_pos + 4 + size_align > lang.in.mem.items.len) {
         @panic("not implemented");
     }
+    std.mem.writeInt(u32, lang.in.mem.items[lang.heap_pos..][0..4], size_align, .little);
+    lang.heap_pos += 4;
+    const start = lang.heap_pos;
+    lang.heap_pos += size_align;
     // std.debug.print("ALLOC at {} w size {}\n", .{ start, size });
     return start;
 }
@@ -81,9 +84,25 @@ fn cb_malloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 }
 
 fn cb_free(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    // TODO: back-track if last allocation
     _ = in;
     _ = args_ret;
     _ = data;
+}
+
+fn cb_realloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    const lang: *WASMLanguage = @alignCast(@ptrCast(data));
+
+    const m = in.mem.items;
+    const ptr = args_ret[0].u32();
+    const size = args_ret[1].u32();
+    const old_size = std.mem.readInt(u32, m[ptr - 4 ..][0..4], .little);
+
+    // TODO: resize if last allocation
+    const new_ptr = try wasm_heap_alloc(lang, size);
+    args_ret[0].i32 = @bitCast(new_ptr);
+    const copy_size = @min(size, old_size);
+    @memcpy(m[new_ptr..][0..copy_size], m[ptr..][0..copy_size]);
 }
 
 fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) error{WASMTrap}!void {
@@ -130,6 +149,23 @@ fn cb_strlen(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     if (ptr >= in.mem.items.len) return error.WASMTrap;
     const len = std.mem.indexOfScalar(u8, in.mem.items[ptr..], 0) orelse return error.WASMTrap;
     args_ret[0].i32 = @bitCast(@as(u32, @intCast(len)));
+}
+
+fn cb_strncpy(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
+    _ = data;
+    const dst = args_ret[0].u32();
+    const src = args_ret[1].u32();
+    const dsize = args_ret[2].u32();
+    const m = in.mem.items;
+
+    // TODO: technically if src is null-terminated before the in.mem.len the first condition is not trapping?
+    if (src + dsize > m.len or dst + dsize > m.len) return error.WASMTrap;
+    const len = std.mem.indexOfScalar(u8, m[src..][0..dsize], 0) orelse dsize;
+    @memcpy(m[dst..][0..len], m[src..][0..len]);
+    if (dsize > len) @memset(m[dst + len .. dst + dsize], 0);
+
+    // already the case:
+    // args_ret[0].i32 = args_ret[0].i32;
 }
 
 fn cb_memcmp(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
@@ -200,10 +236,10 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     try imports.add_func("strlen", .{ .cb = &cb_strlen, .data = bulll("strlen"), .n_args = 1, .n_res = 1 });
     try imports.add_func("memcmp", .{ .cb = &cb_memcmp, .data = bulll("memcmp"), .n_args = 3, .n_res = 1 });
     try imports.add_func("free", .{ .cb = &cb_free, .data = @ptrCast(lang), .n_args = 1, .n_res = 0 });
-    try imports.add_func("realloc", .{ .cb = &trap, .data = bulll("realloc"), .n_args = 2, .n_res = 1 });
+    try imports.add_func("realloc", .{ .cb = &cb_realloc, .data = @ptrCast(lang), .n_args = 2, .n_res = 1 });
     try imports.add_func("malloc", .{ .cb = &cb_malloc, .data = @ptrCast(lang), .n_args = 1, .n_res = 1 });
     try imports.add_func("__assert_fail", .{ .cb = &trap, .data = bulll("__assert_fail"), .n_args = 4, .n_res = 0 });
-    try imports.add_func("strncpy", .{ .cb = &trap, .data = bulll("strncpy"), .n_args = 3, .n_res = 1 });
+    try imports.add_func("strncpy", .{ .cb = &cb_strncpy, .data = bulll("strncpy"), .n_args = 3, .n_res = 1 });
     try imports.add_func("iswalnum", .{ .cb = &cb_iswaifu, .data = bulll("iswaifu"), .n_args = 1, .n_res = 1 });
 
     imports.func_table_size = n_table_funcs;

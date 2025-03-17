@@ -17,12 +17,13 @@ static char *read_file(const char *path, size_t *len)
   fseek(file, 0L, SEEK_END);
   *len = (size_t)ftell(file);
   fseek(file, 0L, SEEK_SET);
-  char *data = malloc(*len);
+  char *data = malloc(*len+1);
   if (fread(data, *len, 1, file) != 1) {
     free(data);
     fclose(file);
     return NULL;
   }
+  data[*len] = 0;
   fclose(file);
   return data;
 }
@@ -84,6 +85,11 @@ int main(int argc, char **argv) {
   //fprintf(stderr, "is set! \n");
 
   const char *source_code = "<html><body>halloj</body></html>";
+  if (argc >= 4) {
+    size_t lenni;
+    source_code = read_file(argv[3], &lenni);
+    if (!source_code) return 8;
+  }
   TSTree *tree = ts_parser_parse_string( parser, NULL, source_code, strlen(source_code));
 
   fprintf(stderr, "is tree: %d\n", !!tree);
