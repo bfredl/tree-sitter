@@ -410,11 +410,11 @@ static unsigned ts_parser__external_scanner_serialize(
     );
     ts_assert(length <= TREE_SITTER_SERIALIZATION_BUFFER_SIZE);
   }
-  fprintf(stderr, "serialize len %d:\n", length);
+  // fprintf(stderr, "serialize len %d:\n", length);
   for (int i = 0; i < length; i++) {
-    fprintf(stderr, "%02x ", (int)(unsigned char)self->lexer.debug_buffer[i]);
+    // fprintf(stderr, "%02x ", (int)(unsigned char)self->lexer.debug_buffer[i]);
   }
-  fprintf(stderr, "\n");
+  // fprintf(stderr, "\n");
   return length;
 }
 
@@ -551,7 +551,7 @@ static Subtree ts_parser__lex(
       ts_lexer_start(&self->lexer);
       ts_parser__external_scanner_deserialize(self, external_token);
       found_token = ts_parser__external_scanner_scan(self, lex_mode.external_lex_state);
-      fprintf(stderr, "found %d %d\n", (int)found_token, self->lexer.data.result_symbol);
+      // fprintf(stderr, "found %d %d\n", (int)found_token, self->lexer.data.result_symbol);
       if (self->has_scanner_error) return NULL_SUBTREE;
       ts_lexer_finish(&self->lexer, &lookahead_end_byte);
 

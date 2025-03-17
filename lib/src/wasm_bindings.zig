@@ -57,7 +57,7 @@ fn wasm_heap_alloc(lang: *WASMLanguage, size: u32) !u32 {
     if (lang.heap_pos > lang.in.mem.items.len) {
         @panic("not implemented");
     }
-    std.debug.print("ALLOC at {} w size {}\n", .{ start, size });
+    // std.debug.print("ALLOC at {} w size {}\n", .{ start, size });
     return start;
 }
 
@@ -245,8 +245,8 @@ fn wasm_load(data: []u8, langname: []u8, lexer_size: usize, any: *anyopaque) !*W
     lang.lang_in_mem = res[0].u32();
     lang.lexer_in_mem = lexer_in_mem;
 
-    try mod.dbg_imports();
-    try mod.dbg_exports();
+    // try mod.dbg_imports();
+    // try mod.dbg_exports();
 
     return lang;
 }
