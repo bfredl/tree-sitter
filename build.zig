@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) !void {
     lib.root_module.addCMacro("_POSIX_C_SOURCE", "200112L");
     lib.root_module.addCMacro("_DEFAULT_SOURCE", "");
 
-    if (wasm) {
+    if (wasm and !neowasm2) {
         if (b.lazyDependency(wasmtimeDep(target.result), .{})) |wasmtime| {
             lib.root_module.addCMacro("TREE_SITTER_FEATURE_WASM", "");
             lib.addSystemIncludePath(wasmtime.path("include"));
@@ -75,9 +75,14 @@ pub fn build(b: *std.Build) !void {
         });
         exe.root_module.addCSourceFile(.{ .file = b.path("./neo_wasm_test.c"), .flags = &.{"-std=c11"} });
         exe.root_module.linkLibrary(lib);
+        if (neowasm2 and wasm) {
+            // exe.root_module.addLibraryPath(wasmtime.path("lib"));
+            exe.root_module.addObjectFile(b.path("../neovim/.deps/usr/lib/libwasmtime.a"));
+            exe.linkLibCpp();
+        }
         b.installArtifact(exe);
-        if (neowasm2) {
-            exe.root_module.addObjectFile(b.path("../wasm-micro-runtime/build/libiwasm.a"));
+        if (neowasm2 and !wasm) {
+            //exe.root_module.addObjectFile(b.path("../wasm-micro-runtime/build/libiwasm.a"));
         }
 
         const run_cmd = b.addRunArtifact(exe);
