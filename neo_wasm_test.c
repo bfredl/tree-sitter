@@ -1,5 +1,6 @@
 // Filename - test-json-parser.c
 #include <assert.h>
+#include <time.h>
 #include <string.h>
 #include <stdio.h>
 #include <tree_sitter/api.h>
@@ -7,6 +8,10 @@
 // gcc -DBACKHOLD -c neo_wasm_test.c && g++ -o ref neo_wasm_test.o zig-out/lib/libtree-sitter.a ../tree-sitter-html/libtree-sitter-html.git.a -fsanitize=undefine
 // zig cc -DBACKHOLD neo_wasm_test.c -o ref zig-out/lib/libtree-sitter.a ../tree-sitter-html/parser.o ../tree-sitter-html/scanner.o -fsanitize=undefined
 // zig run -DBACKHOLD neo_wasm_test.c zig-out/lib/libtree-sitter.a ../tree-sitter-html/parser.o ../tree-sitter-html/scanner.o -lc
+
+#ifdef USE_WASMTIME
+#include "wasm.h"
+#endif
 
 static char *read_file(const char *path, size_t *len)
 {
@@ -59,8 +64,14 @@ int main(int argc, char **argv) {
     return 5;
   }
 
+  clock_t ladda = clock();
+  TSWasmEngine *engine = NULL;
+#ifdef USE_WASMTIME
+    engine = wasm_engine_new();
+#endif
+
   TSWasmError werr = { 0 };
-  ts_wasmstore = ts_wasm_store_new(NULL, &werr);
+  ts_wasmstore = ts_wasm_store_new(engine, &werr);
   if (werr.kind > 0) {
     fprintf(stderr, "Error creating wasm store: (%s) %s", wasmerr_to_str(werr.kind), werr.message);
     return 1;
@@ -68,6 +79,8 @@ int main(int argc, char **argv) {
 
   const TSLanguage *lang = ts_wasm_store_load_language(ts_wasmstore, argv[2], data,
                                                        (uint32_t)file_size, &werr);
+  clock_t endtime = clock() - ladda;
+  fprintf(stderr, "load TIME: %ld\n", endtime);
 #endif
 
   if (lang) {
@@ -79,7 +92,11 @@ int main(int argc, char **argv) {
   }
 
   TSParser *parser = ts_parser_new();
+#ifdef USE_WASMTIME
+  ts_parser_set_wasm_store(parser, ts_wasmstore);
+#else
   ts_parser_set_wasm_store(parser, (TSWasmStore *)lang);
+#endif
   ts_parser_set_language(parser, lang);
 
   //fprintf(stderr, "is set! \n");
@@ -90,9 +107,18 @@ int main(int argc, char **argv) {
     source_code = read_file(argv[3], &lenni);
     if (!source_code) return 8;
   }
+
+  clock_t klocka = clock();
   TSTree *tree = ts_parser_parse_string( parser, NULL, source_code, strlen(source_code));
+  clock_t time = clock() - klocka;
 
   fprintf(stderr, "is tree: %d\n", !!tree);
+  fprintf(stderr, "is TIME: %ld\n", time);
+
+#if !defined(BACKHOLD) && !defined(USE_WASMTIME)
+  void print_counter(void);
+  print_counter();
+#endif
 
   ts_tree_print_dot_graph(tree, 1);
   return 0;

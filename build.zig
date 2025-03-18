@@ -50,7 +50,7 @@ pub fn build(b: *std.Build) !void {
             lib.root_module.addCMacro("TREE_SITTER_FEATURE_WASM", "");
             lib.addSystemIncludePath(wasmtime.path("include"));
             lib.addLibraryPath(wasmtime.path("lib"));
-            lib.linkSystemLibrary("wasmtime");
+            // lib.linkSystemLibrary("wasmtime");
         }
     }
 
@@ -67,15 +67,19 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(lib);
 
     // THIS IS JUST A TEST
-    if (neowasm or neowasm2) {
+    if (wasm or neowasm or neowasm2) {
         const exe = b.addExecutable(.{
             .name = "neowasm_test",
             .target = target,
             .optimize = optimize,
         });
-        exe.root_module.addCSourceFile(.{ .file = b.path("./neo_wasm_test.c"), .flags = &.{"-std=c11"} });
+        const flag = if (wasm) "-DUSE_WASMTIME" else "";
+        exe.root_module.addCSourceFile(.{ .file = b.path("./neo_wasm_test.c"), .flags = &.{ "-std=c11", flag } });
         exe.root_module.linkLibrary(lib);
-        if (neowasm2 and wasm) {
+        if (wasm) {
+            if (b.lazyDependency(wasmtimeDep(target.result), .{})) |wasmtime| {
+                exe.root_module.addSystemIncludePath(wasmtime.path("include"));
+            }
             // exe.root_module.addLibraryPath(wasmtime.path("lib"));
             exe.root_module.addObjectFile(b.path("../neovim/.deps/usr/lib/libwasmtime.a"));
             exe.linkLibCpp();

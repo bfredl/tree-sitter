@@ -11,6 +11,7 @@ const SharedMemInfo = extern struct {
     lexer_in_mem: u32,
     dylink_mem_start: u32,
     dylink_mem_size: u32,
+    heap_size: u32,
 };
 
 pub export fn ts_wasm_load(data: [*]u8, len: usize, lang_name: [*:0]u8, lexer_size: usize, any: *anyopaque) callconv(.c) *anyopaque {
@@ -23,7 +24,7 @@ pub export fn ts_wasm_get_mem(lang: *WASMLanguage) callconv(.c) ?[*]u8 {
 }
 
 pub export fn ts_wasm_get_mem_info(lang: *WASMLanguage, meminfo: *SharedMemInfo) void {
-    meminfo.* = .{ .lang_in_mem = lang.lang_in_mem, .lexer_in_mem = lang.lexer_in_mem, .dylink_mem_start = lang.dylink_mem_base, .dylink_mem_size = lang.dylink_mem_size };
+    meminfo.* = .{ .lang_in_mem = lang.lang_in_mem, .lexer_in_mem = lang.lexer_in_mem, .dylink_mem_start = lang.dylink_mem_base, .dylink_mem_size = lang.dylink_mem_size, .heap_size = lang.heap_pos - lang.heap_start };
 }
 
 pub export fn ts_wasm_reset_heap(lang: *WASMLanguage, serialize_buffer_size: usize) callconv(.c) void {
@@ -37,6 +38,20 @@ pub export fn ts_wasm_serialize_buffer(lang: *WASMLanguage) callconv(.c) u32 {
 
 pub export fn ts_wasm_call_tbl_func(lang: *WASMLanguage, table_idx: u32, n_res: c_int, n_arg: c_int, arg1: u32, arg2: u32, arg3: u32, res: *u32) callconv(.c) bool {
     res.* = wasm_call_tbl_func(lang, table_idx, n_res, n_arg, arg1, arg2, arg3) catch return false;
+    return true;
+}
+
+pub export fn ts_wasm_heap_serialize(lang: *WASMLanguage, buf: [*]u8, len: *u32, max_len: u32) callconv(.c) bool {
+    const size = lang.heap_pos - lang.heap_start;
+    if (size > max_len) return false;
+    @memcpy(buf[0..size], lang.in.mem.items[lang.heap_start..][0..size]);
+    len.* = size;
+    return true;
+}
+
+pub export fn ts_wasm_heap_deserialize(lang: *WASMLanguage, buf: [*]u8, len: u32) callconv(.c) bool {
+    @memcpy(lang.in.mem.items[lang.heap_start..][0..len], buf[0..len]);
+    lang.heap_pos = lang.heap_start + len;
     return true;
 }
 
@@ -85,9 +100,13 @@ fn cb_malloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 
 fn cb_free(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     // TODO: back-track if last allocation
-    _ = in;
-    _ = args_ret;
-    _ = data;
+    const lang: *WASMLanguage = @alignCast(@ptrCast(data));
+    const m = in.mem.items;
+    const ptr = args_ret[0].u32();
+    const size = std.mem.readInt(u32, m[ptr - 4 ..][0..4], .little);
+    if (ptr + size == lang.heap_pos) {
+        lang.heap_pos = ptr - 4;
+    }
 }
 
 fn cb_realloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
@@ -98,11 +117,18 @@ fn cb_realloc(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     const size = args_ret[1].u32();
     const old_size = std.mem.readInt(u32, m[ptr - 4 ..][0..4], .little);
 
-    // TODO: resize if last allocation
-    const new_ptr = try wasm_heap_alloc(lang, size);
-    args_ret[0].i32 = @bitCast(new_ptr);
-    const copy_size = @min(size, old_size);
-    @memcpy(m[new_ptr..][0..copy_size], m[ptr..][0..copy_size]);
+    if (ptr + size == lang.heap_pos) {
+        const new_size = (size + 3) - (size + 3) & 4;
+        std.mem.writeInt(u32, lang.in.mem.items[ptr - 4 ..][0..4], new_size, .little);
+        lang.heap_pos = ptr + new_size;
+        if (lang.heap_pos >= m.len) @panic("nenenee");
+    } else {
+        // TODO: resize if last allocation
+        const new_ptr = try wasm_heap_alloc(lang, size);
+        args_ret[0].i32 = @bitCast(new_ptr);
+        const copy_size = @min(size, old_size);
+        @memcpy(m[new_ptr..][0..copy_size], m[ptr..][0..copy_size]);
+    }
 }
 
 fn cb_lexer(comptime idx: u32) *const fn ([]StackValue, *Instance, *anyopaque) error{WASMTrap}!void {
