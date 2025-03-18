@@ -55,6 +55,11 @@ pub export fn ts_wasm_heap_deserialize(lang: *WASMLanguage, buf: [*]u8, len: u32
     return true;
 }
 
+pub export fn ts_wasm_stat(lang: *WASMLanguage) callconv(.c) void {
+    lang.mod.dump_counts();
+    lang.mod.dbg_imports() catch @panic("aa");
+}
+
 // IMPORTS:
 pub extern fn ts_wasm_lexer_cb(data: *anyopaque, idx: u32, param_1: u32) u32;
 

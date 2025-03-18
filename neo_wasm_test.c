@@ -116,8 +116,8 @@ int main(int argc, char **argv) {
   fprintf(stderr, "is TIME: %ld\n", time);
 
 #if !defined(BACKHOLD) && !defined(USE_WASMTIME)
-  void print_counter(void);
-  print_counter();
+  void print_counter(const TSLanguage *lang);
+  print_counter(lang);
 #endif
 
   ts_tree_print_dot_graph(tree, 1);

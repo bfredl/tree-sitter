@@ -105,6 +105,7 @@ uint32_t ts_wasm_serialize_buffer(WASMLanguage *lang);
 bool ts_wasm_call_tbl_func(WASMLanguage *lang, uint32_t table_idx, int n_res, int n_arg, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t *res);
 bool ts_wasm_heap_serialize(WASMLanguage *lang, char *buf, uint32_t *length, uint32_t max_len);
 bool ts_wasm_heap_deserialize(WASMLanguage *lang, char *buf, uint32_t length);
+void ts_wasm_stat(WASMLanguage *lang);
 
 // END ZIG
 
@@ -147,12 +148,14 @@ const TSLanguage *ts_wasm_store_load_language(
 }
 
 
+size_t counter[7] = { 0 };
 uint32_t ts_wasm_lexer_cb(void *data, uint32_t idx, uint32_t param_1) {
   LanguageWasmModule *mod = data;
   TSLexer *lexer = mod->current_lexer;
   switch (idx) {
     case 0:
       lexer->advance(lexer, param_1);
+      counter[6]++;
       char *memory = ts_wasm_get_mem(mod->wasm_lang);
       memcpy(&memory[mod->lexer_address], &lexer->lookahead, sizeof(lexer->lookahead));
       return 0;
@@ -177,7 +180,6 @@ static LanguageWasmModule *unself(TSWasmStore *self) {
   return (LanguageWasmModule *)(((TSLanguage *)self)->keyword_lex_fn);
 }
 
-size_t counter[6] = { 0 };
 bool ts_wasm_store_start(
   TSWasmStore *self,
   TSLexer *lexer,
@@ -281,7 +283,7 @@ uint32_t ts_wasm_store_call_scanner_serialize(
   ts_wasm_get_mem_info(mod->wasm_lang, &sh);
   if (sh.heap_size > max_heap_size) {
     max_heap_size = sh.heap_size;
-    fprintf(stderr, "Rekord! %u\n", max_heap_size);
+    //fprintf(stderr, "Rekord! %u\n", max_heap_size);
   }
 
 #ifdef QUICK_SERIALIZE
@@ -300,7 +302,7 @@ uint32_t ts_wasm_store_call_scanner_serialize(
     memcpy(buffer, memory+serialization_buffer_address, length);
   }
 
-  fprintf(stderr, "versus! %u or %u\n", sh.heap_size, length);
+  //fprintf(stderr, "versus! %u or %u\n", sh.heap_size, length);
 
   if (!ok) mod->has_error = true;
   return length;
@@ -513,8 +515,11 @@ TSLanguage *big_thing_copy(WASMLanguage *lang, LanguageWasmModule* language_modu
   return language;
 }
 
-void print_counter(void) {
-  for (int i = 0; i < 6; i++) {
+void print_counter(TSLanguage *lang) {
+  LanguageWasmModule *mod = unself(lang);
+
+  for (int i = 0; i < sizeof(counter)/sizeof(*counter); i++) {
     fprintf(stderr, "counter[%d] = %lu\n", i, counter[i]);
   }
+  ts_wasm_stat(mod->wasm_lang);
 }

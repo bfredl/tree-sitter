@@ -67,8 +67,8 @@
             .lazy = true,
         },
         .wasm_anon = .{
-            .url = "git+https://github.com/bfredl/wasm_anon#4753b92abf52d0d1e106123823b44c396ca18cbd",
-            .hash = "wasm_anon-0.0.0-3HxKp8TJAQAn3l80Any29ZuFP8MhTZJ-nVRNgqdIDHkJ",
+            .url = "git+https://github.com/bfredl/wasm_anon#bd395d97bf74a6609287ee443906fd3318756e00",
+            .hash = "wasm_anon-0.0.0-3HxKp8_dAQCGlQ8HY105TsOpUN-qYsWP4iKvK35n4peN",
         },
     },
 }
